@@ -1,4 +1,4 @@
-package parser
+package sct.parser
 
 import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty1

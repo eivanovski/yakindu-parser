@@ -1,4 +1,4 @@
-package parser
+package sct.parser
 
 enum class TokenRegex(
         val regexStr: String
