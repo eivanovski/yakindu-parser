@@ -46,7 +46,8 @@ private constructor(
     constructor(array: Array<String>) : this(array, -1, null)
 
     fun child() = TokenSequence(array, index, this)
-    fun tryProgress() = ++index < array.size
+    fun hasNext() = index + 1 < array.size
+    fun next() = array[++index]
     fun current() = array[index]
     fun commit() {
         if (parent != null) parent.index = this.index

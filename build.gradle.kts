@@ -13,6 +13,7 @@ repositories {
 
 dependencies {
     compile(kotlin("stdlib-jdk8"))
+    compile(kotlin("reflect"))
 }
 
 tasks.withType<KotlinCompile> {
