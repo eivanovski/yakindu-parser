@@ -4,7 +4,7 @@ import kotlin.reflect.KClass
 
 
 interface BlockMatcher<T : Parsable> {
-    fun or(block: ParseInstruction<T>): BlockMatcher<T> = this
+    infix fun or(block: ParseInstruction<T>): BlockMatcher<T>
 }
 
 typealias ParseInstruction<T> = ParsingContext<T>.() -> Unit
@@ -15,6 +15,7 @@ abstract class ParsingContext<T : Parsable> {
 
     abstract fun PropertyWrap<T, String>.asString()
     abstract fun PropertyWrap<T, Int>.asInt()
+    abstract fun <E> PropertyWrap<T, Boolean>.asFlag(flag: E) where E : Keyword, E : Enum<E>
     inline fun <reified E> PropertyWrap<T, E>.asEnum() where E : Keyword, E : Enum<E> = parseEnum(enumValues(), this)
     inline fun <reified V> PropertyWrap<T, V>.asObj() where V : Parsable = parseObj(V::class, this)
 
@@ -74,6 +75,13 @@ class ParsingContextImpl<T : Parsable>(
             this.acceptValue(objBuilder, tokens.current.toInt())
     }
 
+    override fun <E> PropertyWrap<T, Boolean>.asFlag(flag: E) where E : Keyword, E : Enum<E> {
+        if (tryExecute { keyword(flag) })
+            this.acceptValue(objBuilder, true)
+        else
+            this.acceptValue(objBuilder, false)
+    }
+
     override fun <E> parseEnum(enumValues: Array<E>, target: PropertyWrap<T, E>) where E : Keyword, E : Enum<E> {
         if (check { it matches TokenRegex.Word }) {
             val matchedEnumValue = enumValues.asSequence().find { it.keyword == tokens.current }
@@ -88,7 +96,11 @@ class ParsingContextImpl<T : Parsable>(
     override fun <V : Parsable> parseObj(objClass: KClass<V>, target: PropertyWrap<T, V>) {
         if (ok) {
             val obj = getParser(objClass).parse(tokens)
-            if (obj != null) target.acceptValue(objBuilder, obj)
+            if (obj != null) {
+                target.acceptValue(objBuilder, obj)
+            } else {
+                ok = false
+            }
         }
     }
 
@@ -103,7 +115,9 @@ class ParsingContextImpl<T : Parsable>(
     }
 
 
-    private val dummyBlockMatcher = object : BlockMatcher<T> {}
+    private val dummyBlockMatcher = object : BlockMatcher<T> {
+        override fun or(block: ParseInstruction<T>): BlockMatcher<T> = this
+    }
 
     private inner class BlockMatcherImpl(val range: IntRange) : BlockMatcher<T> {
         val blocks = ArrayList<ParseInstruction<T>>()

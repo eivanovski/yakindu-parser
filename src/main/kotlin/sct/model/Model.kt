@@ -4,7 +4,8 @@ import sct.parser.*
 
 
 enum class SctKeyword : Keyword {
-    Event, Operation
+    Interface, Event, Var, Operation,
+    Readonly
 }
 
 enum class SctType : Keyword {
@@ -13,6 +14,17 @@ enum class SctType : Keyword {
 
 enum class EventDirection : Keyword {
     In, Out
+}
+
+data class InterfaceSpec(val name: String, val events: List<Event>, val variables: List<Variable>, val operations: List<Operation>) : Parsable {
+    companion object : Parser<InterfaceSpec>(description {
+        keyword(SctKeyword.Interface)
+        InterfaceSpec::name.parse().asString()
+        delimiter(':')
+        '*' of { InterfaceSpec::events.parseElement().asObj() } or
+                { InterfaceSpec::variables.parseElement().asObj() } or
+                { InterfaceSpec::operations.parseElement().asObj() }
+    })
 }
 
 data class Event(val direction: EventDirection, val name: String, val type: SctType?) : Parsable {
@@ -24,6 +36,17 @@ data class Event(val direction: EventDirection, val name: String, val type: SctT
             delimiter(':')
             Event::type.parse().asEnum()
         }
+    })
+}
+
+data class Variable(val readonly: Boolean, val name: String, val type: SctType, val initExpr: Any?) : Parsable {
+    companion object : Parser<Variable>(description {
+        keyword(SctKeyword.Var)
+        Variable::readonly.parse().asFlag(SctKeyword.Readonly)
+        Variable::name.parse().asString()
+        delimiter(':')
+        Variable::type.parse().asEnum()
+        // todo: init expr
     })
 }
 
@@ -60,9 +83,17 @@ data class Argument(val name: String, val type: SctType) : Parsable {
 }
 
 fun main(args: Array<String>) {
-    println(Event.parse("in event Aaaa"))
-    println(Event.parse("out event Bbbb"))
-    println(Event.parse("in event Aaaa : string"))
-    println(Operation.parse("operation doSomething(aaa:integer, bbb:boolean):string"))
+    val spec =
+            """
+interface SomeInterface:
+in event Aaaa
+out event Bbbb
+in event Aaaa : string
+operation doSomething(aaa:integer, bbb:boolean):string
+var readonly someVar : integer
+var someVar : string
+""".trimIndent()
+
+    println(InterfaceSpec.parse(spec))
 }
 

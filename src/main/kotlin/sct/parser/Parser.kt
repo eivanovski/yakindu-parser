@@ -26,6 +26,10 @@ class TokenSequenceParser<T : Parsable>(
 
             override fun PropertyWrap<T, String>.asString() {}
             override fun PropertyWrap<T, Int>.asInt() {}
+            override fun <E> PropertyWrap<T, Boolean>.asFlag(flag: E) where E : Keyword, E : Enum<E> {
+                keywords.add(flag)
+            }
+
             override fun <E> parseEnum(enumValues: Array<E>, target: PropertyWrap<T, E>) where E : Keyword, E : Enum<E> {
                 keywords.addAll(enumValues)
             }
