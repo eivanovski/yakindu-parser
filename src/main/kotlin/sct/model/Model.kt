@@ -1,36 +1,68 @@
 package sct.model
 
-import sct.parser.parser
+import sct.parser.*
 
-data class InEvent(val name: String, val type: String?) {
-    companion object {
-        val parser = parser(::InEvent) {
-            keyword("in")
-            keyword("event")
-            capture(InEvent::name)
-            optional {
-                delimiter(':')
-                capture(InEvent::type)
-            }
-        }
-    }
+
+enum class SctKeyword : Keyword {
+    Event, Operation
 }
 
-data class Operation(val name: String, val returnType: String?, val arguments: List<String>) {
-    companion object {
-        val parser = parser(::Operation) {
-            keyword("operation")
-            capture(Operation::name)
-            delimiter('(')
-            delimiter(')')
+enum class SctType : Keyword {
+    Void, Boolean, Integer, Real, String
+}
+
+enum class EventDirection : Keyword {
+    In, Out
+}
+
+data class Event(val direction: EventDirection, val name: String, val type: SctType?) : Parsable {
+    companion object : Parser<Event>(description {
+        Event::direction.parse().asEnum()
+        keyword(SctKeyword.Event)
+        Event::name.parse().asString()
+        '?' of {
+            delimiter(':')
+            Event::type.parse().asEnum()
         }
-    }
+    })
+}
+
+data class Operation(
+        val name: String,
+        val arguments: List<Argument>,
+        val returnType: SctType?
+) : Parsable {
+    companion object : Parser<Operation>(description {
+        keyword(SctKeyword.Operation)
+        Operation::name.parse().asString()
+        delimiter('(')
+        '?' of {
+            Operation::arguments.parseElement().asObj()
+            '*' of {
+                delimiter(',')
+                Operation::arguments.parseElement().asObj()
+            }
+        }
+        delimiter(')')
+        '?' of {
+            delimiter(':')
+            Operation::returnType.parse().asEnum()
+        }
+    })
+}
+
+data class Argument(val name: String, val type: SctType) : Parsable {
+    companion object : Parser<Argument>(description {
+        Argument::name.parse().asString()
+        delimiter(':')
+        Argument::type.parse().asEnum()
+    })
 }
 
 fun main(args: Array<String>) {
-//    println(inEvent.parse("in event Aaaaa"))
-//    println(inEvent.parse("in event Bbbb : integer"))
-
-    println(Operation.parser.parse("operation someOperation()"))
+    println(Event.parse("in event Aaaa"))
+    println(Event.parse("out event Bbbb"))
+    println(Event.parse("in event Aaaa : string"))
+    println(Operation.parse("operation doSomething(aaa:integer, bbb:boolean):string"))
 }
 

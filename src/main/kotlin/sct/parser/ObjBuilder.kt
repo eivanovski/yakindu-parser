@@ -1,26 +1,28 @@
 package sct.parser
 
-import kotlin.reflect.KFunction
+import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
 import kotlin.reflect.KProperty1
+import kotlin.reflect.full.isSubclassOf
+import kotlin.reflect.full.primaryConstructor
 
-class ObjBuilder<T>
+class ObjBuilder<T : Any>
 private constructor(
-        private val objConstructor: KFunction<T>,
+        private val klass: KClass<T>,
         private val parent: ObjBuilder<T>?
 ) {
     private val valueStorage = HashMap<String, Any?>()
     private val listStorage = HashMap<String, MutableList<Any>>()
 
-    constructor(objConstructor: KFunction<T>) : this(objConstructor, null)
+    constructor(klass: KClass<T>) : this(klass, null)
 
-    fun child() = ObjBuilder(objConstructor, this)
+    fun child() = ObjBuilder(klass, this)
 
-    fun <V : Any?> set(property: KProperty1<T, V>, value: V) {
-        valueStorage.put(property.name, value)
+    fun <V : Any?> setProperty(property: KProperty1<T, V>, value: V) {
+        valueStorage[property.name] = value
     }
 
-    fun <V : Any> addTo(property: KProperty1<T, List<V>>, value: V) {
+    fun <V : Any> addToList(property: KProperty1<T, List<V>>, value: V) {
         listStorage.computeIfAbsent(property.name) { ArrayList() }
                 .add(value)
     }
@@ -29,32 +31,29 @@ private constructor(
         if (parent != null) {
             parent.valueStorage.putAll(valueStorage)
             listStorage.forEach { key, list ->
-                val parentList = parent.listStorage[key]
-                if (parentList != null)
-                    parentList.addAll(list)
-                else
-                    parent.listStorage[key] = list
+                parent.listStorage.computeIfAbsent(key) { ArrayList() }
+                        .addAll(list)
             }
         }
     }
 
-    fun getParamVal(name: String?): Any? {
-        if (name == null) return null
-
-        if (valueStorage.containsKey(name)) return valueStorage[name]
-
-        val list = listStorage[name]
-        if (list != null)
-            return list
-        else
-            return emptyList<Any>()
+    fun getValue(param: KParameter): Any? {
+        val name = param.name ?: return null
+        val classifier = param.type.classifier
+        return if ((classifier as? KClass<*>)?.isSubclassOf(List::class) == true) {
+            listStorage[name] ?: ArrayList<Any>()
+        } else {
+            valueStorage[name]
+        }
     }
 
     fun build(): T {
+        val constructor = klass.primaryConstructor
+                ?: throw RuntimeException("Primary constructor expected in class $klass")
         val params = HashMap<KParameter, Any?>()
-        objConstructor.parameters.forEach {
-            params[it] = getParamVal(it.name)
+        constructor.parameters.forEach {
+            params[it] = getValue(it)
         }
-        return objConstructor.callBy(params)
+        return constructor.callBy(params)
     }
 }
