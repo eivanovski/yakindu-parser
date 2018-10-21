@@ -1,6 +1,7 @@
 package sct.parser
 
 import kotlin.reflect.KClass
+import kotlin.reflect.KProperty1
 import kotlin.reflect.full.companionObjectInstance
 
 
@@ -24,19 +25,26 @@ class TokenSequenceParser<T : Parsable>(
                 delimiters.add(delimiter)
             }
 
-            override fun PropertyWrap<T, String>.asString() {}
-            override fun PropertyWrap<T, Int>.asInt() {}
-            override fun <E> PropertyWrap<T, Boolean>.asFlag(flag: E) where E : Keyword, E : Enum<E> {
+            override fun parseString() = NoValue<String>()
+            override fun parseInt() = NoValue<Int>()
+            override fun <E> parseFlag(flag: E): ParsedValue<Boolean> where E : Keyword, E : Enum<E> {
                 keywords.add(flag)
+                return NoValue()
             }
 
-            override fun <E> parseEnum(enumValues: Array<E>, target: PropertyWrap<T, E>) where E : Keyword, E : Enum<E> {
+            override fun <E> parseEnum(enumValues: Array<E>): ParsedValue<E> where E : Keyword, E : Enum<E> {
                 keywords.addAll(enumValues)
+                return NoValue()
             }
 
-            override fun <V : Parsable> parseObj(objClass: KClass<V>, target: PropertyWrap<T, V>) {
+            override fun <V : Parsable> parseObj(objClass: KClass<V>): ParsedValue<V> {
                 getParser(objClass).collectDetails(keywords, delimiters, processed)
+                return NoValue()
             }
+
+            override fun <V : Any> ParsedValue<V>.toProp(property: KProperty1<T, V?>) {}
+
+            override fun <V : Any> ParsedValue<V>.toList(property: KProperty1<T, List<V>>) {}
 
             private val visitingBlockMatcher = object : BlockMatcher<T> {
                 override fun or(block: ParseInstruction<T>): BlockMatcher<T> {

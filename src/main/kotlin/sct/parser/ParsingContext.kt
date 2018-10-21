@@ -1,6 +1,7 @@
 package sct.parser
 
 import kotlin.reflect.KClass
+import kotlin.reflect.KProperty1
 
 
 interface BlockMatcher<T : Parsable> {
@@ -9,24 +10,54 @@ interface BlockMatcher<T : Parsable> {
 
 typealias ParseInstruction<T> = ParsingContext<T>.() -> Unit
 
+sealed class ParsedValue<T : Any> {
+    abstract infix fun <S : Any> transform(lambda: (T) -> S?): ParsedValue<S>
+    abstract fun withValue(lambda: (T) -> Unit)
+
+    companion object {
+        fun <V : Any> wrap(value: V?) = when (value) {
+            null -> NoValue<V>()
+            else -> ActualParsedValue(value)
+        }
+    }
+
+    class ActualParsedValue<T : Any>(val value: T) : ParsedValue<T>() {
+        override fun <S : Any> transform(lambda: (T) -> S?) = wrap(lambda.invoke(value))
+        override fun withValue(lambda: (T) -> Unit) = lambda.invoke(value)
+    }
+}
+
+class NoValue<T : Any> : ParsedValue<T>() {
+    override fun <S : Any> transform(lambda: (T) -> S?) = NoValue<S>()
+    override fun withValue(lambda: (T) -> Unit) {}
+}
+
 abstract class ParsingContext<T : Parsable> {
     abstract fun keyword(keyword: Keyword)
     abstract fun delimiter(delimiter: Char)
 
-    abstract fun PropertyWrap<T, String>.asString()
-    abstract fun PropertyWrap<T, Int>.asInt()
-    abstract fun <E> PropertyWrap<T, Boolean>.asFlag(flag: E) where E : Keyword, E : Enum<E>
-    inline fun <reified E> PropertyWrap<T, E>.asEnum() where E : Keyword, E : Enum<E> = parseEnum(enumValues(), this)
-    inline fun <reified V> PropertyWrap<T, V>.asObj() where V : Parsable = parseObj(V::class, this)
+    abstract fun parseString(): ParsedValue<String>
+    abstract fun parseInt(): ParsedValue<Int>
+    abstract fun <E> parseFlag(flag: E): ParsedValue<Boolean> where E : Keyword, E : Enum<E>
+    inline fun <reified E> parseEnum(): ParsedValue<E>
+            where E : Keyword,
+                  E : Enum<E> =
+            parseEnum(enumValues())
+
+    inline fun <reified V : Parsable> parseObj(): ParsedValue<V> = parseObj(V::class)
+
+    abstract infix fun <V : Any> ParsedValue<V>.toProp(property: KProperty1<T, V?>)
+    abstract infix fun <V : Any> ParsedValue<V>.toList(property: KProperty1<T, List<V>>)
 
     infix fun Char.of(block: ParseInstruction<T>): BlockMatcher<T> = blockMatcher().or(block)
 
+    @PublishedApi
+    internal abstract fun <E> parseEnum(enumValues: Array<E>): ParsedValue<E>
+            where E : Keyword,
+                  E : Enum<E>
 
     @PublishedApi
-    internal abstract fun <E> parseEnum(enumValues: Array<E>, target: PropertyWrap<T, E>) where E : Keyword, E : Enum<E>
-
-    @PublishedApi
-    internal abstract fun <V : Parsable> parseObj(objClass: KClass<V>, target: PropertyWrap<T, V>)
+    internal abstract fun <V : Parsable> parseObj(objClass: KClass<V>): ParsedValue<V>
 
     protected abstract fun Char.blockMatcher(): BlockMatcher<T>
 }
@@ -65,43 +96,45 @@ class ParsingContextImpl<T : Parsable>(
         checkEquals(delimiter.toString())
     }
 
-    override fun PropertyWrap<T, String>.asString() {
-        if (check { it matches TokenRegex.Word })
-            this.acceptValue(objBuilder, tokens.current)
-    }
-
-    override fun PropertyWrap<T, Int>.asInt() {
-        if (check { it matches TokenRegex.Number })
-            this.acceptValue(objBuilder, tokens.current.toInt())
-    }
-
-    override fun <E> PropertyWrap<T, Boolean>.asFlag(flag: E) where E : Keyword, E : Enum<E> {
-        if (tryExecute { keyword(flag) })
-            this.acceptValue(objBuilder, true)
-        else
-            this.acceptValue(objBuilder, false)
-    }
-
-    override fun <E> parseEnum(enumValues: Array<E>, target: PropertyWrap<T, E>) where E : Keyword, E : Enum<E> {
-        if (check { it matches TokenRegex.Word }) {
-            val matchedEnumValue = enumValues.asSequence().find { it.keyword == tokens.current }
-            if (matchedEnumValue != null) {
-                target.acceptValue(objBuilder, matchedEnumValue)
-            } else {
-                ok = false
-            }
+    private fun checkAndParse(predicate: (String) -> Boolean): ParsedValue<String> {
+        return when {
+            check(predicate) -> ParsedValue.wrap(tokens.current)
+            else -> NoValue()
         }
     }
 
-    override fun <V : Parsable> parseObj(objClass: KClass<V>, target: PropertyWrap<T, V>) {
+    override fun parseString(): ParsedValue<String> = checkAndParse { it matches TokenRegex.Word }
+    override fun parseInt(): ParsedValue<Int> = checkAndParse { it matches TokenRegex.Number } transform { it.toInt() }
+    override fun <E> parseFlag(flag: E): ParsedValue<Boolean>
+            where E : Keyword,
+                  E : Enum<E> =
+            ParsedValue.wrap(tryExecute { keyword(flag) })
+
+    override fun <E> parseEnum(enumValues: Array<E>): ParsedValue<E> where E : Keyword, E : Enum<E> {
+        return checkAndParse { it matches TokenRegex.Word } transform { value ->
+            enumValues.asSequence()
+                    .find { it.keyword == value }
+                    .also { if (it == null) ok = false }
+        }
+    }
+
+    override fun <V : Parsable> parseObj(objClass: KClass<V>): ParsedValue<V> {
         if (ok) {
             val obj = getParser(objClass).parse(tokens)
-            if (obj != null) {
-                target.acceptValue(objBuilder, obj)
-            } else {
+            if (obj == null) {
                 ok = false
             }
+            return ParsedValue.wrap(obj)
         }
+        return NoValue()
+    }
+
+    override fun <V : Any> ParsedValue<V>.toProp(property: KProperty1<T, V?>) {
+        withValue { objBuilder.setProperty(property, it) }
+    }
+
+    override fun <V : Any> ParsedValue<V>.toList(property: KProperty1<T, List<V>>) {
+        withValue { objBuilder.addToList(property, it) }
     }
 
     override fun Char.blockMatcher(): BlockMatcher<T> {

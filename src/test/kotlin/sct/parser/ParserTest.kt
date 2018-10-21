@@ -12,7 +12,7 @@ data class TestNameHolder(val nameObj: NamedTestClass) : Parsable {
     companion object : Parser<TestNameHolder>(description {
         keyword(TestKeywords.Hold)
         delimiter('(')
-        TestNameHolder::nameObj.parse().asObj()
+        parseObj<NamedTestClass>() toProp TestNameHolder::nameObj
         delimiter(')')
     })
 }
@@ -21,7 +21,7 @@ data class NamedTestClass(val name: String) : Parsable {
     companion object : Parser<NamedTestClass>(description {
         keyword(TestKeywords.Name)
         delimiter('=')
-        NamedTestClass::name.parse().asString()
+        parseString() toProp NamedTestClass::name
     })
 }
 
@@ -41,24 +41,24 @@ sealed class TestSingleExpr : TestExpr() {
 
 data class LiteralExpr(val value: Int) : TestSingleExpr() {
     companion object : Parser<LiteralExpr>(description {
-        LiteralExpr::value.parse().asInt()
+        parseInt() toProp LiteralExpr::value
     })
 }
 
 data class ParenthesisExpr(val expr: TestExpr) : TestSingleExpr() {
     companion object : Parser<ParenthesisExpr>(description {
         delimiter('(')
-        ParenthesisExpr::expr.parse().asObj()
+        parseObj<TestExpr>() toProp ParenthesisExpr::expr
         delimiter(')')
     })
 }
 
 data class SummExpr(val summands: List<TestSingleExpr>) : TestExpr() {
     companion object : Parser<SummExpr>(description {
-        SummExpr::summands.parseElement().asObj()
+        parseObj<TestSingleExpr>() toList SummExpr::summands
         '+' of {
             delimiter('+')
-            SummExpr::summands.parseElement().asObj()
+            parseObj<TestSingleExpr>() toList SummExpr::summands
         }
     })
 }
